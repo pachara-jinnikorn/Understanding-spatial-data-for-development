@@ -1,165 +1,88 @@
 import torch
 from tqdm import tqdm
-
-
-class AverageMeter:
-    """Computes and stores the average and current value"""
-
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
+import numpy as np
 
 def format_logs(logs):
-    str_logs = ["{}={:.3}".format(k, v) for k, v in logs.items()]
-    return ", ".join(str_logs)
+    formatted_logs = []
+    for k, v in logs.items():
+        if "CELoss" in k:  # Keep CELoss as is (not a percentage)
+            formatted_logs.append("{}={:.2f}".format(k, v))
+        else:  # Convert mIoU and other ratios to percentage
+            formatted_logs.append("{}={:.2f}%".format(k, v * 100))
+    return ", ".join(formatted_logs)
 
 
-def train_epoch(
-    model=None,
-    optimizer=None,
-    criterion=None,
-    metric=None,
-    dataloader=None,
-    device="cpu",
-    loss_meter=None,
-    score_meter=None,
-):
 
-    loss_meter = AverageMeter()
-    score_meter = AverageMeter()
-    logs = {}
-
+def train_epoch(model, optimizer, criterion, metric, dataloader, device="cpu"):
+    loss_meter = 0
+    score_meter = 0
+    iou_per_class = None
+    count = 0
+    
     model.to(device).train()
     with tqdm(dataloader, desc="Train") as iterator:
-
         for sample in iterator:
             x = sample["x"].to(device)
             y = sample["y"].to(device)
             n = x.shape[0]
-
-            optimizer.zero_grad()
-            outputs = model.forward(x)
-            loss = criterion(outputs, y)
-            loss.backward()
-            optimizer.step()
-
-            loss_meter.update(loss.cpu().detach().numpy(), n=n)
-            score_meter.update(metric(outputs, y).cpu().detach().numpy(), n=n)
-
-            logs.update({criterion.name: loss_meter.avg})
-            logs.update({metric.name: score_meter.avg})
-            iterator.set_postfix_str(format_logs(logs))
-    return logs
-
-
-def valid_epoch(
-    model=None,
-    criterion=None,
-    metric=None,
-    dataloader=None,
-    device="cpu",
-):
-
-    loss_meter = AverageMeter()
-    score_meter = AverageMeter()
-    logs = {}
-    model.to(device).eval()
-
-    with tqdm(dataloader, desc="Valid") as iterator:
-        for sample in iterator:
-            x = sample["x"].to(device)
-            y = sample["y"].to(device)
-            n = x.shape[0]
-
-            with torch.no_grad():
-                outputs = model.forward(x)
-                loss = criterion(outputs, y)
-
-            loss_meter.update(loss.cpu().detach().numpy(), n=n)
-            score_meter.update(metric(outputs, y).cpu().detach().numpy(), n=n)
             
-            logs.update({criterion.name: loss_meter.avg})
-            logs.update({metric.name: score_meter.avg})
-            iterator.set_postfix_str(format_logs(logs))
-    return logs
-
-
-def train_epoch2(
-    model=None,
-    optimizer=None,
-    criterion=None,
-    metric=None,
-    dataloader=None,
-    device="cpu",
-    loss_meter=None,
-    score_meter=None,
-):
-
-    loss_meter = AverageMeter()
-    score_meter = AverageMeter()
-    logs = {}
-
-    model.to(device).train()
-    with tqdm(dataloader, desc="Train") as iterator:
-
-        for sample in iterator:
-            x = sample["x"].to(device)
-            y = sample["z"].to(device)
-            n = x.shape[0]
-
             optimizer.zero_grad()
             outputs = model.forward(x)
             loss = criterion(outputs, y)
             loss.backward()
             optimizer.step()
+            
+            # ✅ Fix: Unpack metric output before calling .cpu()
+            mean_iou, iou_scores = metric(outputs, y)  
+            mean_iou = mean_iou.item()  # Convert tensor to scalar
 
-            loss_meter.update(loss.cpu().detach().numpy(), n=n)
-            score_meter.update(metric(outputs, y).cpu().detach().numpy(), n=n)
-
-            logs.update({"MSE": loss_meter.avg})
-            logs.update({metric.name: score_meter.avg})
+            if isinstance(iou_scores, np.ndarray):
+                if iou_per_class is None:
+                    iou_per_class = np.zeros_like(iou_scores)
+                iou_per_class += iou_scores
+            
+            loss_meter += loss.cpu().detach().numpy() * n
+            score_meter += mean_iou * n
+            count += n
+            
+            logs = {"CELoss": loss_meter / count, "mIoU": score_meter / count}
             iterator.set_postfix_str(format_logs(logs))
-    return logs
+    
+    iou_per_class /= count if iou_per_class is not None else np.zeros(8)
+    return logs, iou_per_class
 
-
-def valid_epoch2(
-    model=None,
-    criterion=None,
-    metric=None,
-    dataloader=None,
-    device="cpu",
-):
-
-    loss_meter = AverageMeter()
-    score_meter = AverageMeter()
-    logs = {}
+def valid_epoch(model, criterion, metric, dataloader, device="cpu"):
+    loss_meter = 0
+    score_meter = 0
+    iou_per_class = None
+    count = 0
+    
     model.to(device).eval()
-
     with tqdm(dataloader, desc="Valid") as iterator:
         for sample in iterator:
             x = sample["x"].to(device)
-            y = sample["z"].to(device)
+            y = sample["y"].to(device)
             n = x.shape[0]
-
+            
             with torch.no_grad():
                 outputs = model.forward(x)
                 loss = criterion(outputs, y)
+                
+            # ✅ Fix: Unpack metric output before calling .cpu()
+            mean_iou, iou_scores = metric(outputs, y)  
+            mean_iou = mean_iou.item()  # Convert tensor to scalar
 
-            loss_meter.update(loss.cpu().detach().numpy(), n=n)
-            score_meter.update(metric(outputs, y).cpu().detach().numpy(), n=n)
-            logs.update({"MSE": loss_meter.avg})
-            logs.update({metric.name: score_meter.avg})
+            if isinstance(iou_scores, np.ndarray):
+                if iou_per_class is None:
+                    iou_per_class = np.zeros_like(iou_scores)
+                iou_per_class += iou_scores
+            
+            loss_meter += loss.cpu().detach().numpy() * n
+            score_meter += mean_iou * n
+            count += n
+            
+            logs = {"CELoss": loss_meter / count, "mIoU": score_meter / count}
             iterator.set_postfix_str(format_logs(logs))
-    return logs
+    
+    iou_per_class /= count if iou_per_class is not None else np.zeros(8)
+    return logs, iou_per_class
