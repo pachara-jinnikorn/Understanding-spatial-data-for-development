@@ -105,7 +105,7 @@ class Dataset2(BaseDataset):
         if self.train:
             data = self.augm({"image": img, "mask": msk, "osm": osm}, self.size)
         else:
-            data = self.augm({"image": img, "mask": msk, "osm": osm}, 512)
+            data = self.augm({"image": img, "mask": msk, "osm": osm}, 1024)
         data = self.to_tensor(data)
 
         return {"x": data["image"], "y": data["mask"], "z": data["osm"], "fn": self.fns[idx]}
@@ -135,7 +135,7 @@ class Dataset3(BaseDataset):
         if self.train:
             data = self.augm({"image": img, "mask": msk}, self.size)
         else:
-            data = self.augm({"image": img, "mask": msk}, 512)
+            data = self.augm({"image": img, "mask": msk}, 1024)
         data = self.to_tensor(data)
 
         return {"x": data["image"], "y": data["mask"], "fn": self.fns[idx]}

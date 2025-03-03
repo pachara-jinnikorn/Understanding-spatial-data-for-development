@@ -22,7 +22,7 @@ class ToTensor:
             sample[key] = TF.to_tensor(sample[key].astype(np.float32) / 255.0)
         return sample
 
-def valid_augm(sample, size=512):
+def valid_augm(sample, size=1024):
     augms = [A.Resize(height=size, width=size, p=1.0)]
     return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
 
@@ -30,7 +30,7 @@ def test_augm(sample):
     augms = [A.Flip(p=0.1)]
     return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
 
-def train_augm(sample, size=512):
+def train_augm(sample, size=1024):
     augms = [
         A.ShiftScaleRotate(
             scale_limit=0.2, rotate_limit=45, border_mode=0, value=0, p=0.7
@@ -77,19 +77,19 @@ def train_augm(sample, size=512):
     ]
     return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
 
-def train_augm3(sample, size=512):
+def train_augm3(sample, size=1024):
     augms = [
         A.PadIfNeeded(size, size, border_mode=0, value=0, p=1.0),
         A.RandomCrop(size, size, p=1.0),
     ]
     return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
 
-def valid_augm2(sample, size=512):
+def valid_augm2(sample, size=1024):
     augms = [A.Resize(height=size, width=size, p=1.0)]
     return A.Compose(augms,additional_targets={'osm': 'image'})(image=sample["image"], mask=sample["mask"], osm=sample["osm"])
 
 
-def train_augm2(sample, size=512):
+def train_augm2(sample, size=1024):
     augms = [
         A.ShiftScaleRotate(
             scale_limit=0.2, rotate_limit=45, border_mode=0, value=0, p=0.7
